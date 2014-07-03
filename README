@@ -1,0 +1,30 @@
+This is a mirror of http://www.vim.org/scripts/script.php?script_id=4976
+
+*vim-gista* is a plugin for manipulating [Gists](https://gist.github.com/).
+It provide the following features:
+
+1. Listing gists
+  - Authenticated user's gist entries
+  - Authenticated user's starred gist entries
+  - Gist entries of a particular user
+  - Gist entries in Gist web
+  - Listing gist entries in Unite (require '[Shougo/unite.vim](https://github.com/Shougo/unite.vim)')
+2. Opening gists
+  - Open files of an authenticated user in modifiable buffers
+  - Open files of a particular user in nomodifiable buffers
+  - Open files of a gist with a browser (require '[tyru/open-browser.vim](https://github.com/tyru/open-browser.vim)')
+3. Posting gists
+  - Create a new gist from a current buffer
+  - Create a new gist from all opened+listed+visible buffers
+4. Editing gists
+  - A file content of a gist
+  - A description of a gist
+  - Rename a file of a gist
+  - Remove a file of a gist
+5. Deleting gists
+6. Giving/taking a star to a gist
+7. Forking a gist
+
+The original concepts and strategies are taken from '[mattn/gist.vim](https://github.com/mattn/gist-vim)'; however the most of these are aggressively modified to establish vim-gista new implementations.
+
+See GitHub: https://github.com/lambdalisue/vim-gista
