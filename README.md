@@ -2,7 +2,8 @@ vim-gista
 ===============================================================================
 ![vim-gista interface (screencast)](./doc/screencast-interface.gif)
 
-Version: 0.1.6
+Version: 0.1.15
+Support: Vim 7.3 and above (Let me know if there are issues)
 
 *vim-gista* is a plugin for manipulating [Gists](https://gist.github.com/).
 It provide the following features:
@@ -300,7 +301,10 @@ vim-gista have much more features, check it out with
 
 With Unite.vim
 -------------------------------------------------------------------------------
+![vim-gista with Unite.vim (screenshot)](./doc/screenshot-unite.png)
 ![vim-gista with Unite.vim (screencast)](./doc/screencast-unite.gif)
+
+(The screencast was taken in development stage. The interface is changed a bit in the production.)
 
 If you are using [Unite.vim](https://github.com/Shougo/unite.vim), you can manipulate gists with it.
 The source name is 'gista' thus call the unite as follow:

@@ -45,16 +45,16 @@ function! s:set_bridge(gistid, filename, bufnum) abort " {{{
   let bridges[a:gistid][a:filename] = a:bufnum
 endfunction " }}}
 function! s:format_gist(gist) abort " {{{
-  let gistid = printf("[%-20S]", a:gist.id)
+  let gistid = printf("[%-20s]", a:gist.id)
   let update = printf("%s",
         \ gista#utils#datetime(a:gist.updated_at).format('%Y/%m/%d %H:%M:%S'))
-  let private = a:gist.public ? "" : "<private>"
+  let private = a:gist.public ? "" : g:gista#private_mark
   let description = empty(a:gist.description) ?
         \ '<<No description>>' :
         \ a:gist.description
   let bwidth = gista#utils#get_bufwidth()
   let width = bwidth - len(private) - len(gistid) - len(update) - 4
-  return printf(printf("%%-%dS %%s %%s %%s", width),
+  return printf(printf("%%-%ds %%s %%s %%s", width),
         \ gista#utils#trancate(description, width),
         \ private,
         \ gistid,
@@ -100,7 +100,7 @@ function! s:action(action) abort " {{{
 endfunction " }}}
 function! s:ac_write_gist_buffer(filename) abort " {{{
   " Note: this function is assumed to called from autocmd.
-  if substitute(a:filename, '\\', '/', 'g') == expand("%:p:gs@\\@/@")
+  if substitute(a:filename, '\\', '/', 'g') == expand("%:p:gs@\\@/@") && &modifiable
     if &buftype == ''
       " save the file to the filesystem
       execute "w".(v:cmdbang ? "!" : "") fnameescape(v:cmdarg) fnameescape(a:filename)
@@ -162,6 +162,9 @@ function! gista#interface#list(lookup, ...) abort " {{{
         nmap <buffer> e          <Plug>(gista-action-edit)
         nmap <buffer> s          <Plug>(gista-action-split)
         nmap <buffer> v          <Plug>(gista-action-vsplit)
+        nmap <buffer> E          <Plug>(gista-action-edit-nocache)
+        nmap <buffer> S          <Plug>(gista-action-split-nocache)
+        nmap <buffer> V          <Plug>(gista-action-vsplit-nocache)
         nmap <buffer> b          <Plug>(gista-action-browse)
         nmap <buffer> yy         <Plug>(gista-action-yank)
       endif
@@ -191,7 +194,8 @@ function! gista#interface#list(lookup, ...) abort " {{{
 endfunction " }}}
 function! gista#interface#update(...) abort " {{{
   let bufname = s:get_buffer_name('list')
-  let settings = extend({}, get(a:000, 0, getbufvar(bufname, 'settings', {})))
+  let settings = extend({}, get(a:000, 0,
+        \ gista#utils#getbufvar(bufname, 'settings', {})))
   " this function should be called on the gista:list window
   if bufname !=# expand('%')
     call gista#utils#call_on_buffer(bufname,
@@ -268,12 +272,14 @@ function! gista#interface#connect(gistid, filename) abort " {{{
     setlocal buftype=nowrite
     setlocal nomodifiable
     autocmd! BufWriteCmd <buffer>
+          \ call s:ac_write_gist_buffer(expand("<amatch>"))
   endif
 endfunction " }}}
 function! gista#interface#open(gistid, filenames, ...) abort " {{{
   let settings = extend({
         \ 'openers': g:gista#gist_openers,
         \ 'opener': g:gista#gist_default_opener,
+        \ 'nocache': 0,
         \}, get(a:000, 0, {}))
 
   let gist = gista#gist#api#get(a:gistid, settings)
@@ -329,6 +335,17 @@ function! gista#interface#open(gistid, filenames, ...) abort " {{{
       endif
     else
       execute winnum . 'wincmd w'
+      if settings.nocache
+        let save_undolevels = &undolevels
+        let save_modifiable = &modifiable
+        setlocal undolevels=-1
+        setlocal modifiable
+        silent %delete _
+        call setline(1, split(gist.files[filename].content, "\n"))
+        let &undolevels = save_undolevels
+        let &modifiable = save_modifiable
+        setlocal nomodified
+      endif
     endif
   endfor
 endfunction " }}}
@@ -336,6 +353,7 @@ function! gista#interface#post(line1, line2, ...) abort " {{{
   let settings = extend({
         \ 'auto_connect_after_post': g:gista#auto_connect_after_post,
         \ 'update_list': 1,
+        \ 'auto_yank_gistid_after_post': g:gista#auto_yank_gistid_after_post,
         \}, get(a:000, 0, {}))
 
   let filename = gista#utils#provide_filename(expand('%'), 0)
@@ -346,6 +364,11 @@ function! gista#interface#post(line1, line2, ...) abort " {{{
     return
   endif
 
+  " the changes are updated correctly
+  if a:line1 == 1 && a:line2 == '$'
+    setl nomodified
+  endif
+
   " Connect the buffer to the gist
   if settings.auto_connect_after_post
     call gista#interface#connect(gist.id, filename)
@@ -354,6 +377,13 @@ function! gista#interface#post(line1, line2, ...) abort " {{{
   if settings.update_list
     call gista#interface#update()
   endif
+  " Yank GistID
+  if settings.auto_yank_gistid_after_post
+    call gista#interface#yank_action(gist.id, '', {
+          \ 'verbose': 0,
+          \ 'gistid_yank_format': g:gista#gistid_yank_format_in_post,
+          \})
+  endif
 endfunction " }}}
 function! gista#interface#post_buffers(...) abort " {{{
   let settings = extend({
@@ -361,6 +391,7 @@ function! gista#interface#post_buffers(...) abort " {{{
         \     g:gista#include_invisible_buffers_in_multiple,
         \ 'auto_connect_after_post': g:gista#auto_connect_after_post,
         \ 'update_list': 1,
+        \ 'auto_yank_gistid_after_post': g:gista#auto_yank_gistid_after_post,
         \}, get(a:000, 0, {}))
 
   let filenames = []
@@ -391,6 +422,11 @@ function! gista#interface#post_buffers(...) abort " {{{
     return
   endif
 
+  " the changes are updated correctly
+  for bufnum in pbufnums
+    call setbufvar(bufnum, '&modified', 0)
+  endfor
+
   " Connect the buffer to the gist
   if settings.auto_connect_after_post
     for [bufnum, filename] in gista#utils#vital#zip(pbufnums, filenames)
@@ -403,6 +439,13 @@ function! gista#interface#post_buffers(...) abort " {{{
   " Update list window
   if settings.update_list
     call gista#interface#update()
+  endif
+  " Yank GistID
+  if settings.auto_yank_gistid_after_post
+    call gista#interface#yank_action(gist.id, '', {
+          \ 'verbose': 0,
+          \ 'gistid_yank_format': g:gista#gistid_yank_format_in_post,
+          \})
   endif
 endfunction " }}}
 function! gista#interface#save(line1, line2, ...) abort " {{{
@@ -419,6 +462,7 @@ function! gista#interface#save(line1, line2, ...) abort " {{{
 
   let settings = extend({
         \ 'update_list': 1,
+        \ 'auto_yank_gistid_after_save': g:gista#auto_yank_gistid_after_save,
         \}, get(a:000, 0, {}))
 
   let gistid = b:gistinfo.gistid
@@ -430,9 +474,22 @@ function! gista#interface#save(line1, line2, ...) abort " {{{
     return
   endif
 
+  " the changes are updated correctly
+  if a:line1 == 1 && a:line2 == '$'
+    setl nomodified
+  endif
+
   " Update list window
   if settings.update_list
     call gista#interface#update()
+  endif
+
+  " Yank GistID
+  if settings.auto_yank_gistid_after_save
+    call gista#interface#yank_action(gist.id, '', {
+          \ 'verbose': 0,
+          \ 'gistid_yank_format': g:gista#gistid_yank_format_in_save,
+          \})
   endif
 endfunction " }}}
 function! gista#interface#rename(new_filename, ...) abort " {{{
@@ -678,10 +735,10 @@ function! gista#interface#do_action(action, info, ...) " {{{
     let settings = deepcopy(settings)
     let settings.nocache = 1
     call gista#interface#update(settings) " }}}
-  elseif a:action ==# 'open' ||
-        \ a:action ==# 'edit' ||
-        \ a:action ==# 'split' ||
-        \ a:action ==# 'vsplit' " {{{
+  elseif a:action =~# 'open!\?' ||
+        \ a:action =~# 'edit!\?' ||
+        \ a:action =~# 'split!\?' ||
+        \ a:action =~# 'vsplit!\?' " {{{
     if empty(a:info.gist.files)
       redraw
       echohl GistaWarning
@@ -691,11 +748,19 @@ function! gista#interface#do_action(action, info, ...) " {{{
       return
     endif
 
-    if a:action !=# 'open'
-      " overwrite opener
-      let settings = extend(settings, {
-            \ 'opener': a:action,
-            \})
+    if a:action !~# 'open!\?'
+      if a:action =~# '!$'
+        " overwrite opener (strip trailing !)
+        let settings = extend(settings, {
+              \ 'opener': a:action[:-2],
+              \ 'nocache': 1,
+              \})
+      else
+        " overwrite opener
+        let settings = extend(settings, {
+              \ 'opener': a:action,
+              \})
+      endif
     endif
 
     " move the focuse to the previous selected window
@@ -886,17 +951,27 @@ function! gista#interface#disconnect_action(gistid, filenames) abort " {{{
 endfunction " }}}
 function! gista#interface#yank_action(gistid, ...) abort " {{{
   let filename = get(a:000, 0, '')
+  let settings = extend({
+        \ 'verbose': 1,
+        \ 'gistid_yank_format': g:gista#gistid_yank_format,
+        \ 'gistid_yank_format_with_file': g:gista#gistid_yank_format_with_file,
+        \}, get(a:000, 1, {}))
   if empty(filename)
-    let content = a:gistid
+    let content = substitute(
+          \ settings.gistid_yank_format, '{gistid}', a:gistid, '')
   else
-    let content = printf("%s/%s", a:gistid, filename)
+    let content = substitute(
+          \ settings.gistid_yank_format_with_file, '{gistid}', a:gistid, '')
+    let content = substitute(
+          \ content, '{filename}', filename, '')
   endif
 
   let @" = content
-  redraw | echo 'Yanked: ' . content
-
   if has('clipboard')
     call setreg(v:register, content)
+  endif
+  if settings.verbose
+    redraw | echo 'Yanked: ' . content
   endif
 endfunction " }}}
 
@@ -916,6 +991,14 @@ nnoremap <silent> <Plug>(gista-action-split)
       \ :call <SID>action('split')<CR>
 nnoremap <silent> <Plug>(gista-action-vsplit)
       \ :call <SID>action('vsplit')<CR>
+nnoremap <silent> <Plug>(gista-action-open-nocache)
+      \ :call <SID>action('open!')<CR>
+nnoremap <silent> <Plug>(gista-action-edit-nocache)
+      \ :call <SID>action('edit!')<CR>
+nnoremap <silent> <Plug>(gista-action-split-nocache)
+      \ :call <SID>action('split!')<CR>
+nnoremap <silent> <Plug>(gista-action-vsplit-nocache)
+      \ :call <SID>action('vsplit!')<CR>
 nnoremap <silent> <Plug>(gista-action-rename)
       \ :call <SID>action('rename')<CR>
 nnoremap <silent> <Plug>(gista-action-remove)

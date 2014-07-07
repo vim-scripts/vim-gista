@@ -11,12 +11,12 @@ set cpo&vim
 
 function! s:format_gist(gist) " {{{
   let nfiles = printf("%2d)", len(a:gist.files))
-  let gistid = printf("[%-20S]", a:gist.id)
+  let gistid = printf("[%-20s]", a:gist.id)
   let updated_at = gista#utils#datetime(a:gist.updated_at).format('%H:%M:%S')
   let description = empty(a:gist.description) ?
         \ '<<No description>>' :
         \ a:gist.description
-  let private = a:gist.public ? "" : "<private>"
+  let private = a:gist.public ? "" : g:gista#private_mark
   return printf("%s %s %s %s %s",
         \ nfiles,
         \ gistid,
